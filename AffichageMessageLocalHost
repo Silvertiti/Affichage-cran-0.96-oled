@@ -1,0 +1,111 @@
+#include <WiFi.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Wire.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Configuration Wi-Fi
+const char* ssid = "Freebox-66FEE0";
+const char* password = "theotim16";
+
+WiFiServer server(80);
+String message = "Message initial";
+
+void setup() {
+  // Initialisation de la console série
+  Serial.begin(115200);
+  Wire.begin();
+
+  // Initialisation de l'écran OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("Échec de l'initialisation de l'écran OLED");
+    for (;;); // Boucle infinie si l'initialisation échoue
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("Connexion Wi-Fi...");
+  display.display();
+
+  // Connexion Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Connexion en cours...");
+  }
+
+  Serial.println("Connecté au Wi-Fi");
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("Serveur demarre");
+  display.display();
+
+  // Démarrage du serveur
+  server.begin();
+  Serial.println("Serveur démarré");
+  Serial.print("Adresse IP : ");
+  Serial.println(WiFi.localIP());
+  
+}
+
+void loop() {
+  WiFiClient client = server.available();   // Écoute des connexions entrantes
+  if (client) {
+    Serial.println("Nouveau client connecté");
+    String currentLine = "";
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read();
+        Serial.write(c);
+        if (c == '\n') {
+          // Si la ligne est vide, fin de la requête HTTP
+          if (currentLine.length() == 0) {
+            // Envoi de la page HTML de réponse
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println();
+
+            // Page HTML avec formulaire d'entrée
+            client.println("<!DOCTYPE html><html>");
+            client.println("<form action=\"/\" method=\"get\">");
+            client.println("Message: <input type=\"text\" name=\"msg\"><br>");
+            client.println("<input type=\"submit\" value=\"Envoyer\">");
+            client.println("</form>");
+            client.println("</html>");
+            client.println();
+            break;
+          } else {
+            currentLine = "";
+          }
+        } else if (c != '\r') {
+          currentLine += c;
+        }
+
+        // Vérification si la requête contient le paramètre "msg"
+        if (currentLine.startsWith("GET /?msg=")) {
+          int msgStart = currentLine.indexOf('=') + 1;
+          int msgEnd = currentLine.indexOf(' ', msgStart);
+          message = currentLine.substring(msgStart, msgEnd);
+          message.replace("%20", " "); // Remplacement des espaces encodés
+
+          // Affichage du message sur l'écran OLED
+          display.clearDisplay();
+          display.setCursor(0, 0);
+          display.setTextSize(1);
+          display.print("Message:");
+          display.setCursor(0, 10);
+          display.print(message);
+          display.display();
+        }
+      }
+    }
+    client.stop();
+    Serial.println("Client déconnecté");
+  }
+}
